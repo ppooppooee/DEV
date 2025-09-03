@@ -1,0 +1,4 @@
+RAG/ko-sroberta-multitask/
+RAG/web-crawler/.venv/
+RAG/web-crawler/crawler-env/
+RAG/web-crawler/__pycache__/

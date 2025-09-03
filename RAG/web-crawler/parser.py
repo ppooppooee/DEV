@@ -48,7 +48,7 @@ def parse_and_save(html, url, conn, save_dir=None):  # ✅ conn 주입
                 USING (
                     VALUES (
                         %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s,
+                        %s, %s, %s::timestamp, %s, %s,
                         %s, %s, %s, %s, %s
                     )
                 ) AS v(
