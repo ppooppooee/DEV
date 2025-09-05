@@ -17,10 +17,10 @@ TARGET_FILE = os.path.join(BASE_DIR, "DATA", "targets.txt")
 SAVE_DIR = os.path.join(BASE_DIR, "DATA", "pages")
 os.makedirs(SAVE_DIR, exist_ok=True)
 
-MAX_DEPTH = 3
+MAX_DEPTH = 4
 
   # ✅ depth=0이면 초기 URL만, depth=1이면 링크 한 번 따라감
-MAX_DOCS_PER_DEPTH = 100  # 모든 depth에 동일하게 적용
+MAX_DOCS_PER_DEPTH = 10  # 모든 depth에 동일하게 적용
 
 depth_counts = {}  # 각 depth별 문서 수 추적
 url_queue = Queue()
@@ -57,7 +57,7 @@ def crawl_and_parse():
                 # 다음 depth로 최대 10개 링크만 추출
                 if depth < MAX_DEPTH:
                     links = extract_links(res.text, url)
-                    limited_links = list(links)[:8]  # ✅ 여기서 리스트로 변환
+                    limited_links = list(links)[:MAX_DOCS_PER_DEPTH]  # ✅ 여기서 리스트로 변환
                     for link in limited_links:
                         if link not in visited:
                             url_queue.put((link, depth + 1))

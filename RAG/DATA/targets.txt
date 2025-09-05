@@ -1,3 +1,3 @@
-https://news.naver.com/
+#https://news.naver.com/
 https://namu.wiki
-https://www.mysql.com
+#https://www.mysql.com
