@@ -4,8 +4,7 @@ import requests
 import urllib3
 from queue import Queue
 from parser import parse_and_save, extract_links
-#from parser import parse_and_store, extract_links
-import psycopg2
+from db_process import get_db_connection
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -25,16 +24,6 @@ depth_counts = {}  # 각 depth별 문서 수 추적
 url_queue = Queue()
 visited = set()
 
-def get_db_connection():
-    # ✅ 커넥션 생성
-    conn = psycopg2.connect(
-        dbname='my_database',
-        user='postgres',
-        password='jypark11!!',
-        host='localhost',
-        port='5432'
-    )
-    return conn
 
 
 
