@@ -1,5 +1,5 @@
 # db_process.py
-
+from utils import udprint
 import psycopg2
 
 DB_CONFIG = {
@@ -68,7 +68,7 @@ def insert_document(conn, doc: dict):
         with conn.cursor() as cur:
             cur.execute(merge_query, doc)
         conn.commit()
-        print(f"[DB MERGED] {doc['url']}")
+        udprint(f"[DB MERGED] {doc['url']}")
     except Exception as e:
         conn.rollback()
-        print(f"[ERROR] {doc['url']}: {e}")
+        udprint(f"[ERROR] {doc['url']}: {e}")

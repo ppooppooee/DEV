@@ -5,6 +5,8 @@ import urllib3
 from queue import Queue
 from parser import parse_and_save, extract_links
 from db_process import get_db_connection
+from utils import udprint
+
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -49,7 +51,7 @@ def crawl_and_parse():
         try:
             res = requests.get(url, verify=False, timeout=10)
             if res.status_code == 200:
-                print(f"[CRAWLED] {url} (depth={depth})")
+                udprint(f"[CRAWLED] {url} (depth={depth})")
                 parse_and_save(res.text, url, conn, SAVE_DIR)
 
                 # 다음 depth로 최대 10개 링크만 추출
@@ -60,7 +62,7 @@ def crawl_and_parse():
                         if link not in visited:
                             url_queue.put((link, depth + 1))
         except Exception as e:
-            print(f"[ERROR] {url}: {e}")
+            udprint(f"[ERROR] {url}: {e}")
     conn.close()
 
 
