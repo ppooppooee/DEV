@@ -3,7 +3,6 @@ RAG/web-crawler/.venv/
 RAG/web-crawler/crawler-env/
 RAG/web-crawler/__pycache__/
 colabNotebooks/1.LangChain RAG.ipynb
-colabNotebooks/1.LangChainRAG4LMS.ipynb
 colabNotebooks/2.RAG 데이터 전처리.ipynb
 colabNotebooks/3.Advanced RAG.ipynb
 colabNotebooks/4.Modular RAG and Agentic RAG.ipynb
