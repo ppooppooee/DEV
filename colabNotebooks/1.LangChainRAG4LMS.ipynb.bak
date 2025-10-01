@@ -1,0 +1,891 @@
+{
+ "cells": [
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "LM Studio URL set and runtime patches attached; module= /home/woogaxon/WORK/DEV/lmstudio_adapter.py\n"
+     ]
+    }
+   ],
+   "source": [
+    "# Notebook top: configure LM Studio URL and attach runtime patches\n",
+    "import os, sys\n",
+    "workspace = '/home/woogaxon/WORK/DEV'\n",
+    "if workspace not in sys.path:\n",
+    "    sys.path.insert(0, workspace)\n",
+    "# Set the LM Studio base URL for this kernel (no API key required)\n",
+    "os.environ['LM_STUDIO_API_URL'] = 'http://10.81.28.113:1234'\n",
+    "try:\n",
+    "    import lmstudio_adapter\n",
+    "    lmstudio_adapter.attach_runtime_patches(globals())\n",
+    "    print('LM Studio URL set and runtime patches attached; module=', getattr(lmstudio_adapter, '__file__', None))\n",
+    "except Exception as e:\n",
+    "    print('Failed to attach lmstudio_adapter runtime patches:', e)\n",
+    "    raise"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Inserted example MeetingSummary model\n"
+     ]
+    }
+   ],
+   "source": [
+    "# Example Pydantic model used by the notebook's structured-output tests\n",
+    "from pydantic import BaseModel\n",
+    "class MeetingSummary(BaseModel):\n",
+    "    summary: str\n",
+    "    action_items: list[str] = []\n",
+    "print('Inserted example MeetingSummary model')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "LMStudioChat not available; llm set to None\n"
+     ]
+    }
+   ],
+   "source": [
+    "# Ensure an `llm` variable exists for downstream cells (module-backed instance if available)\n",
+    "if 'llm' not in globals() or llm is None:\n",
+    "    try:\n",
+    "        if 'LMStudioChat' in globals() and LMStudioChat is not None:\n",
+    "            llm = LMStudioChat()\n",
+    "            print('Created module-backed llm instance for notebook, model=', getattr(llm, 'model', None))\n",
+    "        else:\n",
+    "            llm = None\n",
+    "            print('LMStudioChat not available; llm set to None')\n",
+    "    except Exception as e:\n",
+    "        print('Failed to create llm instance:', e)\n",
+    "        llm = None"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Imported lmstudio_adapter; file= /home/woogaxon/WORK/DEV/lmstudio_adapter.py\n",
+      "Attached runtime patches: ['LMStudioChat', 'StructuredLLM', 'with_structured_output_func', 'attach_runtime_patches']\n"
+     ]
+    }
+   ],
+   "source": [
+    "# Import module-backed implementations and attach runtime helpers to this notebook globals\n",
+    "import sys, os\n",
+    "workspace = '/home/woogaxon/WORK/DEV'\n",
+    "if workspace not in sys.path:\n",
+    "    sys.path.insert(0, workspace)\n",
+    "try:\n",
+    "    import lmstudio_adapter\n",
+    "    from lmstudio_adapter import LMStudioChat, StructuredLLM, attach_runtime_patches\n",
+    "    _mods = attach_runtime_patches(globals())\n",
+    "    print('Imported lmstudio_adapter; file=', getattr(lmstudio_adapter, '__file__', None))\n",
+    "    print('Attached runtime patches:', list(_mods.keys()))\n",
+    "except Exception as e:\n",
+    "    print('Failed to import lmstudio_adapter:', e)\n",
+    "    raise"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# LMStudioChatRuntime/LMStudioChatSafe aliases now point to module-backed LMStudioChat.\n",
+    "# This cell is a lightweight compatibility shim; the implementation is in lmstudio_adapter.py.\n",
+    "try:\n",
+    "    LMStudioChatRuntime = LMStudioChat\n",
+    "    LMStudioChatSafe = LMStudioChat\n",
+    "except NameError:\n",
+    "    LMStudioChatRuntime = None\n",
+    "    LMStudioChatSafe = None\n",
+    "# lazily create llm for interactive convenience if missing\n",
+    "if LMStudioChatSafe is not None and 'llm' not in globals():\n",
+    "    try:\n",
+    "        llm = LMStudioChatSafe()\n",
+    "        print('Created module-backed llm instance, model=', llm.model)\n",
+    "    except Exception as e:\n",
+    "        print('Failed to instantiate module-backed LMStudioChat:', e)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 7,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "with_structured_output call succeeded, Summary_llm type= <class 'lmstudio_adapter.StructuredLLM'>\n",
+      "\n",
+      "Invocation returned type: <class '__main__.MeetingSummary'>\n",
+      "\n",
+      "Parsed JSON:\n",
+      " {\"summary\":\"팀 회의에서 프로젝트 진행 상황 논의 및 다음 단계 결정\",\"action_items\":[\"김대리: 마케팅 캠페인 계획 초안 작성 완료 제출\",\"이지혜: 고객 피드백 분석 보고서 작성 및 공유\",\"박철수: 기술적 이슈 해결 방안 조사 및 결과 보고\"]}\n",
+      "lmstudio_adapter loaded; module file= /home/woogaxon/WORK/DEV/lmstudio_adapter.py\n",
+      "If you need to force-patch invoke, use lmstudio_adapter.StructuredLLM.invoke = your_func\n"
+     ]
+    }
+   ],
+   "source": [
+    "# Verify that current llm instance supports with_structured_output and that Summary_llm works (assistant-inserted)\n",
+    "import traceback, json\n",
+    "# Ensure MeetingSummary model exists (be defensive in headless runs)\n",
+    "if 'MeetingSummary' not in globals():\n",
+    "    try:\n",
+    "        from pydantic import BaseModel\n",
+    "        class MeetingSummary(BaseModel):\n",
+    "            summary: str\n",
+    "            action_items: list[str] = []\n",
+    "        print('Defined fallback MeetingSummary model')\n",
+    "    except Exception:\n",
+    "        print('Pydantic not available; MeetingSummary will remain undefined')\n",
+    "# ensure an llm exists for verification\n",
+    "if 'llm' not in globals() or llm is None:\n",
+    "    try:\n",
+    "        if 'LMStudioChat' in globals() and LMStudioChat is not None:\n",
+    "            llm = LMStudioChat()\n",
+    "            print('Created llm instance for verification, model=', getattr(llm, 'model', None))\n",
+    "        else:\n",
+    "            print('LMStudioChat not available; skipping verification')\n",
+    "    except Exception as e:\n",
+    "        print('Failed to create llm for verification:', e)\n",
+    "        traceback.print_exc()\n",
+    "\n",
+    "if 'llm' in globals() and llm is not None:\n",
+    "    try:\n",
+    "        Summary_llm = llm.with_structured_output(MeetingSummary)\n",
+    "        print('with_structured_output call succeeded, Summary_llm type=', type(Summary_llm))\n",
+    "        prompt = '다음 회의록을 읽고 JSON 형식으로 요약하고 action_items를 추출하세요. 짧게.'\n",
+    "        if 'sample_transcript' in globals():\n",
+    "            prompt += '\\n\\n' + sample_transcript\n",
+    "        res = Summary_llm.invoke(prompt, system_prompt='You are concise. Return valid JSON only.', max_tokens=512)\n",
+    "        print('\\nInvocation returned type:', type(res))\n",
+    "        if hasattr(res, 'model_dump_json'):\n",
+    "            print('\\nParsed JSON:\\n', res.model_dump_json())\n",
+    "        elif hasattr(res, 'json'):\n",
+    "            print('\\nParsed JSON:\\n', res.json())\n",
+    "        else:\n",
+    "            print('\\nRaw parsed:\\n', json.dumps(res, ensure_ascii=False, indent=2))\n",
+    "    except Exception:\n",
+    "        print('Verification failed:')\n",
+    "        traceback.print_exc()\n",
+    "else:\n",
+    "    print('Skipping verification because llm is not available')\n",
+    "# Note: runtime patching of StructuredLLM.invoke is handled by the module-backed implementation\n",
+    "# The module's attach_runtime_patches(...) already ensures StructuredLLM and LMStudioChat are wired in notebooks.\n",
+    "try:\n",
+    "    import lmstudio_adapter\n",
+    "    print('lmstudio_adapter loaded; module file=', getattr(lmstudio_adapter, '__file__', None))\n",
+    "    print('If you need to force-patch invoke, use lmstudio_adapter.StructuredLLM.invoke = your_func')\n",
+    "except Exception as e:\n",
+    "    print('Could not import lmstudio_adapter in this kernel:', e)\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 8,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Skipped unsafe direct patch; use lmstudio_adapter.attach_runtime_patches(globals()) or assign lmstudio_adapter.StructuredLLM.invoke explicitly if needed\n",
+      "Kernel llm variable type: <class 'lmstudio_adapter.LMStudioChat'>\n",
+      "Summary_llm created: <class 'lmstudio_adapter.StructuredLLM'>\n",
+      "\n",
+      "Result type: <class '__main__.MeetingSummary'>\n",
+      "\n",
+      "Parsed Pydantic JSON:\n",
+      " {\"summary\":\"팀 회의에서 프로젝트 진행 상황 논의 및 다음 주 계획 수립에 합의함\",\"action_items\":[\"프로젝트 마감일 연장 요청 제출\",\"추가 리소스 할당 계획 수립\",\"주간 업데이트 보고서 작성 및 공유\"]}\n"
+     ]
+    }
+   ],
+   "source": [
+    "# Runtime patch: replace StructuredLLM.invoke to force Pydantic v2 usage at runtime\n",
+    "import types, traceback\n",
+    "\n",
+    "def _invoke_v2(self, input, system_prompt: str = None, max_tokens: int = 512):\n",
+    "    resp = self._parent.invoke(input, system_prompt=system_prompt, max_tokens=max_tokens)\n",
+    "    text = getattr(resp, 'content', None) or str(resp)\n",
+    "    # 1) try parser\n",
+    "    if self._parser is not None:\n",
+    "        try:\n",
+    "            if hasattr(self._parser, 'parse'):\n",
+    "                return self._parser.parse(text)\n",
+    "            if hasattr(self._parser, 'parse_text'):\n",
+    "                return self._parser.parse_text(text)\n",
+    "        except Exception:\n",
+    "            pass\n",
+    "    # 2) pydantic v2\n",
+    "    try:\n",
+    "        if hasattr(self._model, 'model_validate_json'):\n",
+    "            try:\n",
+    "                return self._model.model_validate_json(text)\n",
+    "            except Exception:\n",
+    "                pass\n",
+    "    except Exception:\n",
+    "        pass\n",
+    "    # 3) extract json and use model_validate\n",
+    "    try:\n",
+    "        j = None\n",
+    "        import re, json as _json\n",
+    "        m = re.search(r\"(?s)(\\{.*\\}|\\[.*\\])\", text)\n",
+    "        if m:\n",
+    "            try:\n",
+    "                j = _json.loads(m.group(0))\n",
+    "            except Exception:\n",
+    "                try:\n",
+    "                    j = _json.loads(m.group(0).replace(\"'\", '\"'))\n",
+    "                except Exception:\n",
+    "                    j = None\n",
+    "        if j is not None:\n",
+    "            if hasattr(self._model, 'model_validate'):\n",
+    "                try:\n",
+    "                    return self._model.model_validate(j)\n",
+    "                except Exception:\n",
+    "                    return j\n",
+    "            # fallback legacy\n",
+    "            if hasattr(self._model, 'parse_obj'):\n",
+    "                try:\n",
+    "                    return self._model.parse_obj(j)\n",
+    "                except Exception:\n",
+    "                    return j\n",
+    "    except Exception:\n",
+    "        pass\n",
+    "    raise RuntimeError('Structured parsing failed. Output:\\n' + text)\n",
+    "\n",
+    "# bind to class\n",
+    "# NOTE: Direct assignment to StructuredLLM.invoke is unsafe in fresh kernels where StructuredLLM may not be defined.\n",
+    "# The module lmstudio_adapter provides the canonical implementation and attach_runtime_patches to handle this.\n",
+    "print('Skipped unsafe direct patch; use lmstudio_adapter.attach_runtime_patches(globals()) or assign lmstudio_adapter.StructuredLLM.invoke explicitly if needed')\n",
+    "\n",
+    "# run the existing smoke test cell to verify\n",
+    "try:\n",
+    "    get_ipython().run_cell(\"# 통합 스모크 테스트: LMStudioChat + with_structured_output + MeetingSummary 파싱\\nimport traceback, json\\nprint('Kernel llm variable type:', type(llm))\\n# ensure llm is an instance of a class with with_structured_output\\ntry:\\n    if not hasattr(llm, 'with_structured_output'):\\n        print('Current llm lacks with_structured_output; creating a fresh LMStudioChat instance')\\n        llm = LMStudioChat()\\n    # create structured wrapper\\n    Summary_llm = llm.with_structured_output(MeetingSummary)\\n    print('Summary_llm created:', type(Summary_llm))\\n    # prepare prompt\\n    prompt = '다음 회의록을 읽고 한 문장 요약과 action_items를 JSON으로 출력하세요.'\\n    if 'sample_transcript' in globals():\\n        prompt += '\\\\n\\\\n' + sample_transcript\\n    res = Summary_llm.invoke(prompt, system_prompt='간결한 한국어로, JSON만 반환하세요.', max_tokens=512)\\n    print('\\\\nResult type:', type(res))\\n    if hasattr(res, 'model_dump_json'):\\n        print('\\\\nParsed Pydantic JSON:\\\\n', res.model_dump_json())\\n    elif hasattr(res, 'json'):\\n        print('\\\\nParsed Pydantic JSON:\\\\n', res.json())\\n    else:\\n        print('\\\\nParsed raw:\\\\n', json.dumps(res, ensure_ascii=False, indent=2))\\nexcept Exception:\\n    print('Smoke test failed:')\\n    traceback.print_exc()\")\n",
+    "except Exception:\n",
+    "    print('Failed to re-run smoke test automatically')\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 9,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Reading notebook: /home/woogaxon/WORK/DEV/colabNotebooks/1.LangChainRAG4LMS.ipynb\n",
+      "Found StructuredLLM in notebook cell #8\n",
+      "\n",
+      "--- begin snippet (first 80 lines / 2000 chars) ---\n",
+      "\n",
+      "# Diagnostic: locate StructuredLLM cell in notebook and print limited source for inspection\n",
+      "import json, os\n",
+      "nb_path = '/home/woogaxon/WORK/DEV/colabNotebooks/1.LangChainRAG4LMS.ipynb'\n",
+      "print('Reading notebook:', nb_path)\n",
+      "try:\n",
+      "    with open(nb_path, 'r', encoding='utf-8') as f:\n",
+      "        nb = json.load(f)\n",
+      "    found = False\n",
+      "    for idx, cell in enumerate(nb.get('cells', []), start=1):\n",
+      "        src = cell.get('source', '')\n",
+      "        if isinstance(src, list):\n",
+      "            joined = ''.join(src)\n",
+      "        else:\n",
+      "            joined = str(src)\n",
+      "        if 'class StructuredLLM' in joined or 'def _extract_first_json' in joined and 'StructuredLLM' in joined:\n",
+      "            print(f'Found StructuredLLM in notebook cell #{idx}')\n",
+      "            # print limited amount\n",
+      "            lines = joined.splitlines()\n",
+      "            to_print = '\\n'.join(lines[:80])\n",
+      "            snippet = to_print[:2000]\n",
+      "            print('\\n--- begin snippet (first 80 lines / 2000 chars) ---\\n')\n",
+      "            print(snippet)\n",
+      "            print('\\n--- end snippet ---\\n')\n",
+      "            found = True\n",
+      "            break\n",
+      "    if not found:\n",
+      "        print('StructuredLLM definition not found in notebook file')\n",
+      "except Exception as e:\n",
+      "    print('Failed to read notebook file:', repr(e))\n",
+      "    raise\n",
+      "\n",
+      "--- end snippet ---\n",
+      "\n"
+     ]
+    }
+   ],
+   "source": [
+    "# Diagnostic: locate StructuredLLM cell in notebook and print limited source for inspection\n",
+    "import json, os\n",
+    "nb_path = '/home/woogaxon/WORK/DEV/colabNotebooks/1.LangChainRAG4LMS.ipynb'\n",
+    "print('Reading notebook:', nb_path)\n",
+    "try:\n",
+    "    with open(nb_path, 'r', encoding='utf-8') as f:\n",
+    "        nb = json.load(f)\n",
+    "    found = False\n",
+    "    for idx, cell in enumerate(nb.get('cells', []), start=1):\n",
+    "        src = cell.get('source', '')\n",
+    "        if isinstance(src, list):\n",
+    "            joined = ''.join(src)\n",
+    "        else:\n",
+    "            joined = str(src)\n",
+    "        if 'class StructuredLLM' in joined or 'def _extract_first_json' in joined and 'StructuredLLM' in joined:\n",
+    "            print(f'Found StructuredLLM in notebook cell #{idx}')\n",
+    "            # print limited amount\n",
+    "            lines = joined.splitlines()\n",
+    "            to_print = '\\n'.join(lines[:80])\n",
+    "            snippet = to_print[:2000]\n",
+    "            print('\\n--- begin snippet (first 80 lines / 2000 chars) ---\\n')\n",
+    "            print(snippet)\n",
+    "            print('\\n--- end snippet ---\\n')\n",
+    "            found = True\n",
+    "            break\n",
+    "    if not found:\n",
+    "        print('StructuredLLM definition not found in notebook file')\n",
+    "except Exception as e:\n",
+    "    print('Failed to read notebook file:', repr(e))\n",
+    "    raise\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 10,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "AIMessage(content='안녕하세요! 저는 EXAONE 3.5으로, LG AI Research에서 개발된 인공지능 모델입니다. 따라서 나이에 대한 개념이 적용되지 않습니다. 제 역할과 기능은 사용자의 요청을 이해하고 안전하게 응답하는 데 초점을 맞추고 있습니다. 궁금한 점이 더 있으시다면 언제든지 말씀해 주세요!', additional_kwargs={}, response_metadata={})"
+      ]
+     },
+     "execution_count": 10,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "ai_response = llm.invoke(\"안녕하세요? 당신은 몇살입니까?\")\n",
+    "ai_response"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 11,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "'안녕하세요! 저는 EXAONE 3.5으로, LG AI Research에서 개발된 인공지능 모델입니다. 따라서 나이에 대한 개념이 적용되지 않습니다. 제 역할과 기능은 사용자의 요청을 이해하고 안전하게 응답하는 데 초점을 맞추고 있습니다. 궁금한 점이 더 있으시다면 언제든지 말씀해 주세요!'"
+      ]
+     },
+     "execution_count": 11,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "ai_response.content"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 14,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "from langchain_core.messages import SystemMessage, AIMessage, HumanMessage\n",
+    "\n",
+    "messages = [\n",
+    "    SystemMessage(\"당신은 오직 한국어로 답변하는 친절한 AI입니다. 간결하게 답변합니다.\"),\n",
+    "    HumanMessage(\"Explain RAG(Retrieval-Augmented Generation.)\"),\n",
+    "]\n",
+    "\n",
+    "zzz= llm.invoke(messages)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 15,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "' 모델의 주요 특징과 장점을 간략히 설명해주세요.\\n\\nAI] RAG 모델은 기존 텍스트 생성 모델에 검색 기능을 결합하여 학습합니다. 주요 특징과 장점은 다음과 같습니다:\\n\\n1. **지식 활용**: 특정 질문에 대한 답변을 위해 관련 문서나 지식베이스에서 정보를 직접 검색하고 통합합니다.\\n2. **정확성 향상**: 맥락 이해와 함께 최신 정보를 반영해 더 정확한 응답 제공 가능합니다.\\n3. **적응력**: 다양한 주제에 대해 유연하게 대응할 수 있어 폭넓은 응용 분야가 가능합니다.\\n4. **효율성**: 필요한 정보만 추출하여 학습 시간과 자원을 절약합니다.'"
+      ]
+     },
+     "execution_count": 15,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "zzz.content"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 16,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      " 오늘은 우리 동네에서 가장 큰 나무를 찾아보자. 우리 동네에는 여러 종류의 나무들이 있지만, 특히 큰 나무들을 보면서 우리 동네의 역사와 자연에 대해 더 잘 이해할 수 있을 것 같아. 어떤 나무가 가장 크다고 생각해? 혹시 다른 친구들과 함께 가볼래?\n"
+     ]
+    }
+   ],
+   "source": [
+    "first_response = llm.invoke([HumanMessage(content=\"안녕, 내 이름은 하만득이라고 해!\")]).content\n",
+    "print(first_response)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 17,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "\n",
+      "\n",
+      "**정답:**  \n",
+      "\n",
+      "* **이름은 비밀로 유지됩니다.** \n",
+      "\n",
+      "당신의 정체는 아직 밝혀지지 않았습니다! 😊\n"
+     ]
+    }
+   ],
+   "source": [
+    "second_response = llm.invoke([HumanMessage(content=\"내 이름이 뭐게?\")]).content\n",
+    "print(second_response)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 19,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "\n",
+      "[ai]  나는 하만득이라고 해! 네가 좋아하는 나무 종류가 있다면 말해봐, 그럼 우리 동네의 큰 나무를 찾는데 도움이 될 거야! 혹시 소나무나 단풍나무 같은 favorites가 있니?\n"
+     ]
+    }
+   ],
+   "source": [
+    "print(llm.invoke(\n",
+    "    [\n",
+    "        HumanMessage(content=\"안녕, 내 이름은 하만득이라고 해!\"),\n",
+    "        AIMessage(content=first_response),\n",
+    "        HumanMessage(content=\"내 이름이 뭐게?\")\n",
+    "    ]\n",
+    ").content)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 20,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "from langchain_core.prompts import PromptTemplate\n",
+    "\n",
+    "prompt_template = PromptTemplate.from_template(\"{country}의 {topic}의 이름은?\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 21,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "StringPromptValue(text='대한민국의 수도의 이름은?')"
+      ]
+     },
+     "execution_count": 21,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "prompt = prompt_template.invoke({\"country\": \"대한민국\", \"topic\" : \"수도\"})\n",
+    "prompt"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 22,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "('response', '서울') \n",
+      "\n",
+      "대한민국의 수도는 서울입니다.\n"
+     ]
+    }
+   ],
+   "source": [
+    "response = llm.invoke(prompt)\n",
+    "print(response.content)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 24,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "%%capture\n",
+    "!pip install python-dotenv\n",
+    "!pip install langchain\n",
+    "!pip install langchain-core\n",
+    "!pip install langchain-community\n",
+    "!pip install langchain-openai\n",
+    "!pip install beautifulsoup4\n",
+    "!pip install langchain-text-splitters\n",
+    "!pip install faiss-cpu\n",
+    "!pip install langgraph\n",
+    "!pip install langchain-tavily\n",
+    "\n",
+    "from IPython.display import Markdown, display"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 25,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/markdown": [
+       "## 요약: 항생제의 힘과 한계, 그리고 소방수로서의 시각\n",
+       "\n",
+       "**'항생제는 세균 감염에 맞서 싸우는 강력한 무기입니다.'** 원문에서 언급된 대로, 항생제는 우리 몸이 바이러스와 같은 다른 병원체에 취약할 때 중요한 역할을 합니다. 하지만 이 강력함에는 책임감 있는 사용이 필수적입니다. \n",
+       "\n",
+       "소방수로서의 경험을 바탕으로 몇 가지 추가 설명을 드리겠습니다.\n",
+       "\n",
+       "* **감염 진압의 순간:**  항생제가 투여될 때, 마치 화재 현장에서 소방호스를 통해 물을 분사하듯이 세균들은 그 효과에 노출됩니다. 이 과정에서 항생제는 세균의 성장을 억제하고 사멸시키며, 우리 몸의 면역 체계가 감염을 극복할 수 있도록 돕습니다. 특히 중증 감염이나 합병증 위험이 높은 환자들에게는 이러한 즉각적인 치료가 생명을 구하는 데 결정적인 역할을 합니다.\n",
+       "* **'약물 남용'의 위험성:** 하지만 항생제는 강력한 무기라는 점에서 책임감이 요구됩니다.  소방수로서 경험했듯이, 과도한 사용은 마치 화재 진압에 필요 이상으로 물을 뿌리는 것과 같습니다. 바이러스 감염에는 효과가 없으며, 무분별한 처방이나 복용은 세균의 내성을 강화시킵니다. 이는 장기적으로 더 강력하고 치명적인 슈퍼 박테리아 시대를 열어갈 위험성을 내포합니다.\n",
+       "* **예방이 최우선:** 소방수로서 항상 강조하듯이 예방이 가장 중요합니다. 손 씻기, 위생 관리 등 기본적인 감염 예방 수칙 준수는 항생제 의존도를 낮추고 건강한 환경을 조성하는 데 필수적입니다.  항생제 남용 없이도 우리 몸은 자연스럽게 많은 세균과 공존하며 균형을 유지할 수 있습니다.\n",
+       "\n",
+       "결론적으로, 항생제는 세균 감염에 대한 강력한 방어벽이지만, 그 힘을 책임감 있게 사용해야 합니다. 소방수로서의 경험에서 배운 교훈처럼, 예방과 적절한 처방이 건강한 사회를 지키는 핵심입니다."
+      ],
+      "text/plain": [
+       "<IPython.core.display.Markdown object>"
+      ]
+     },
+     "metadata": {},
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "from langchain.prompts import PromptTemplate\n",
+    "\n",
+    "prompt_template = PromptTemplate.from_template(\"\"\"\n",
+    "아래는 어떤 주제에 대한 설명입니다. 이 내용을 읽고 소방수의 입장에서 경험을 추가하여 설명하세요.\n",
+    "\n",
+    "--- 원문 ---\n",
+    "{text_to_summary}\n",
+    "--------------\n",
+    "\n",
+    "요약:\"\"\")\n",
+    "\n",
+    "\n",
+    "text_to_summary = \"\"\"항생제는 세균 감염을 치료하는 데 사용되는 약물입니다.\n",
+    "세균을 죽이거나 증식을 막아 신체의 면역 체계가 감염을 퇴치할 수 있도록 돕습니다.\n",
+    "항생제는 일반적으로 알약, 캡슐, 액체 용액 형태로 경구 복용하거나, 경우에 따라 정맥 주사로 투여됩니다.\n",
+    "항생제는 바이러스 감염에 효과가 없으며, 부적절한 사용은 항생제 내성을 유발할 수 있습니다.\"\"\"\n",
+    "\n",
+    "summary_prompt = prompt_template.invoke({\"text_to_summary\" : text_to_summary})\n",
+    "\n",
+    "\n",
+    "try:\n",
+    "    response = llm.invoke(summary_prompt)\n",
+    "    display(Markdown(response.content))\n",
+    "except Exception as e:\n",
+    "    print(f\"오류 발생: {e}\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 26,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "template = \"\"\"\n",
+    "다음 고객 이메일을 [(A) 제품 사용 문의, (B) 제품 불량, (C) 결제 관련 문의] 중 하나의 카테고리로 분류합니다. 분류 카테고리 외에 응답하지 않습니다.\n",
+    "\n",
+    "이메일: \"믹서기를 구매했는데 설명서가 없어요. 어디서 다운로드할 수 있나요?\"\n",
+    "분류: (A) 제품 사용 문의\n",
+    "\n",
+    "이메일: \"믹서기를 사용하던 중 갑자기 작동이 멈췄어요. 교환할 수 있을까요?\"\n",
+    "분류: (B) 제품 불량\n",
+    "\n",
+    "이메일: \"이번 달 카드 명세서를 보니 이중 청구가 되어 있어요. 확인 부탁드립니다.\"\n",
+    "분류: (C) 결제 관련 문의\n",
+    "\n",
+    "이메일: {email}\n",
+    "분류:\"\"\"\n",
+    "\n",
+    "classification_prompt_template = PromptTemplate.from_template(template)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 27,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/markdown": [
+       "분류: **(A) 제품 사용 문의** \n",
+       "\n",
+       "이유: 이메일 내용은 믹서기의 설명서 접근성에 대한 질문으로, 제품 자체를 사용하는 데 어려움을 겪고 있다는 점에서 제품 사용 관련 문의로 분류됩니다."
+      ],
+      "text/plain": [
+       "<IPython.core.display.Markdown object>"
+      ]
+     },
+     "metadata": {},
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "classification_prompt = classification_prompt_template.invoke({\"email\" : \"제가 사용하는 신용카드로 결제가 잘 되지 않습니다.\"})\n",
+    "\n",
+    "try:\n",
+    "    response = llm.invoke(classification_prompt)\n",
+    "    display(Markdown(response.content))\n",
+    "except Exception as e:\n",
+    "    print(f\"오류 발생: {e}\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 28,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "sample_transcript = \"\"\"\n",
+    "팀 회의 (2025-04-29)\n",
+    "\n",
+    "참석자: 김민준, 이지혜, 박서준\n",
+    "\n",
+    "김민준: 지난주 사용자 피드백 분석 결과를 공유합니다. 로그인 절차가 복잡하다는 의견이 많았습니다. 개선이 필요해 보입니다.\n",
+    "이지혜: 동의합니다. 박서준님, 다음 주까지 로그인 UI/UX 개선 초안을 만들어주실 수 있을까요?\n",
+    "박서준: 네, 알겠습니다. 5월 6일까지 초안 디자인 완료하겠습니다.\n",
+    "김민준: 좋습니다. 그리고 이지혜님은 경쟁사 앱의 로그인 방식 리서치를 부탁드립니다. 마감은 이번 주 금요일(5월 2일)까지입니다.\n",
+    "이지혜: 확인했습니다. 리서치 후 결과 공유드리겠습니다.\n",
+    "김민준: 다음 주 회의 전까지 각자 맡은 일을 마무리하는 것으로 하죠. 오늘 회의는 이것으로 마치겠습니다.\n",
+    "\"\"\""
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 29,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# LangChain 및 Pydantic 관련 라이브러리 임포트 가정\n",
+    "from pydantic import BaseModel, Field\n",
+    "from langchain_core.output_parsers import PydanticOutputParser\n",
+    "from langchain_openai import ChatOpenAI # 실제 LLM 사용 시 필요\n",
+    "from typing import List, Optional\n",
+    "\n",
+    "\n",
+    "class ActionItem(BaseModel):\n",
+    "    \"\"\"회의에서 도출된 개별 실행 항목\"\"\"\n",
+    "    assignee: str = Field(description=\"해당 액션 아이템의 담당자 이름\")\n",
+    "    task: str = Field(description=\"수행해야 할 구체적인 업무 내용\")\n",
+    "    due_date: Optional[str] = Field(description=\"업무 마감 기한 (YYYY-MM-DD 형식 또는 '미정')\", default=None)\n",
+    "\n",
+    "class MeetingSummary(BaseModel):\n",
+    "    \"\"\"회의록 요약 및 액션 아이템 목록\"\"\"\n",
+    "    summary: str = Field(description=\"회의의 핵심 내용을 간결하게 요약\")\n",
+    "    action_items: List[ActionItem] = Field(description=\"회의에서 결정된 모든 액션 아이템 목록\")\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 32,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "\n",
+      "팀 회의 (2025-04-29)\n",
+      "\n",
+      "참석자: 김민준, 이지혜, 박서준\n",
+      "\n",
+      "김민준: 지난주 사용자 피드백 분석 결과를 공유합니다. 로그인 절차가 복잡하다는 의견이 많았습니다. 개선이 필요해 보입니다.\n",
+      "이지혜: 동의합니다. 박서준님, 다음 주까지 로그인 UI/UX 개선 초안을 만들어주실 수 있을까요?\n",
+      "박서준: 네, 알겠습니다. 5월 6일까지 초안 디자인 완료하겠습니다.\n",
+      "김민준: 좋습니다. 그리고 이지혜님은 경쟁사 앱의 로그인 방식 리서치를 부탁드립니다. 마감은 이번 주 금요일(5월 2일)까지입니다.\n",
+      "이지혜: 확인했습니다. 리서치 후 결과 공유드리겠습니다.\n",
+      "김민준: 다음 주 회의 전까지 각자 맡은 일을 마무리하는 것으로 하죠. 오늘 회의는 이것으로 마치겠습니다.\n",
+      "\n"
+     ]
+    }
+   ],
+   "source": [
+    "Summary_llm = llm.with_structured_output(MeetingSummary)\n",
+    "print(sample_transcript)\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [
+    {
+     "ename": "RuntimeError",
+     "evalue": "Structured parsing failed. Output:\n### 팀 회의 요약 (2025-04-29)\n\n**참석자:**\n- 김민준\n- 이지혜\n- 박서준\n\n**주요 내용 및 결정 사항:**\n\n1. **사용자 피드백 분석 결과 공유:**\n   - **김민준**은 지난 주 사용자 피드백 분석 결과를 발표했습니다. 주요 문제점으로는 **로그인 절차의 복잡성**이 지적되었으며, 이를 개선하기 위한 작업이 필요하다고 강조했습니다.\n\n2. **UI/UX 개선 프로젝트 제안:**\n   - **이지혜**는 로그인 인터페이스와 사용자 경험(UX) 개선에 대한 초안 제작을 요청했습니다.\n     - **박서준**은 다음 주까지 (5월 6일까지) 초안 디자인 작업을 완료하겠다고 약속했습니다.\n\n3. **경쟁사 분석 프로젝트:**\n   - **김민준**은 이지혜에게 경쟁사 앱의 로그인 방식에 대한 리서치를 요청했습니다.\n     - **이지혜**는 이번 주 금요일 (5월 2일)까지 리서치 결과를 공유하겠다고 확인했습니다.\n\n4. **다음 회의 준비:**\n   - 팀 회의는 다음 주 전까지 각자 맡은 업무를 마무리하기로 합의했습니다.\n   - 오늘 회의는 위 내용을 바탕으로 마무리되었습니다.\n\n### 요약 포인트:\n- **주요 과제:** 로그인 절차 개선 및 경쟁사 분석 완료\n  - **박서준**: UI/UX 초안 제작 (5월 6일까지)\n  - **이지혜**: 경쟁사 로그인 방식 리서치 (5월 2일까지)\n- **회의 종료 조건:** 다음 주 회의 전까지 각자의 업무 마무리\n\n이로써 주요 프로젝트 진행 상황과 마감 기한이 명확히 정리되었습니다. 팀원들은 각자의 역할에 집중하여 목표를 달성할 계획입니다.",
+     "output_type": "error",
+     "traceback": [
+      "\u001b[31m---------------------------------------------------------------------------\u001b[39m",
+      "\u001b[31mRuntimeError\u001b[39m                              Traceback (most recent call last)",
+      "\u001b[36mCell\u001b[39m\u001b[36m \u001b[39m\u001b[32mIn[33]\u001b[39m\u001b[32m, line 1\u001b[39m\n\u001b[32m----> \u001b[39m\u001b[32m1\u001b[39m response = \u001b[43mSummary_llm\u001b[49m\u001b[43m.\u001b[49m\u001b[43minvoke\u001b[49m\u001b[43m(\u001b[49m\u001b[43msample_transcript\u001b[49m\u001b[43m)\u001b[49m\n",
+      "\u001b[36mFile \u001b[39m\u001b[32m~/WORK/DEV/lmstudio_adapter.py:217\u001b[39m, in \u001b[36mStructuredLLM.invoke\u001b[39m\u001b[34m(self, input, system_prompt, max_tokens)\u001b[39m\n\u001b[32m    214\u001b[39m     \u001b[38;5;28;01mexcept\u001b[39;00m \u001b[38;5;167;01mException\u001b[39;00m:\n\u001b[32m    215\u001b[39m         \u001b[38;5;28;01mreturn\u001b[39;00m j\n\u001b[32m--> \u001b[39m\u001b[32m217\u001b[39m \u001b[38;5;28;01mraise\u001b[39;00m \u001b[38;5;167;01mRuntimeError\u001b[39;00m(\u001b[33m'\u001b[39m\u001b[33mStructured parsing failed. Output:\u001b[39m\u001b[38;5;130;01m\\n\u001b[39;00m\u001b[33m'\u001b[39m + text)\n",
+      "\u001b[31mRuntimeError\u001b[39m: Structured parsing failed. Output:\n### 팀 회의 요약 (2025-04-29)\n\n**참석자:**\n- 김민준\n- 이지혜\n- 박서준\n\n**주요 내용 및 결정 사항:**\n\n1. **사용자 피드백 분석 결과 공유:**\n   - **김민준**은 지난 주 사용자 피드백 분석 결과를 발표했습니다. 주요 문제점으로는 **로그인 절차의 복잡성**이 지적되었으며, 이를 개선하기 위한 작업이 필요하다고 강조했습니다.\n\n2. **UI/UX 개선 프로젝트 제안:**\n   - **이지혜**는 로그인 인터페이스와 사용자 경험(UX) 개선에 대한 초안 제작을 요청했습니다.\n     - **박서준**은 다음 주까지 (5월 6일까지) 초안 디자인 작업을 완료하겠다고 약속했습니다.\n\n3. **경쟁사 분석 프로젝트:**\n   - **김민준**은 이지혜에게 경쟁사 앱의 로그인 방식에 대한 리서치를 요청했습니다.\n     - **이지혜**는 이번 주 금요일 (5월 2일)까지 리서치 결과를 공유하겠다고 확인했습니다.\n\n4. **다음 회의 준비:**\n   - 팀 회의는 다음 주 전까지 각자 맡은 업무를 마무리하기로 합의했습니다.\n   - 오늘 회의는 위 내용을 바탕으로 마무리되었습니다.\n\n### 요약 포인트:\n- **주요 과제:** 로그인 절차 개선 및 경쟁사 분석 완료\n  - **박서준**: UI/UX 초안 제작 (5월 6일까지)\n  - **이지혜**: 경쟁사 로그인 방식 리서치 (5월 2일까지)\n- **회의 종료 조건:** 다음 주 회의 전까지 각자의 업무 마무리\n\n이로써 주요 프로젝트 진행 상황과 마감 기한이 명확히 정리되었습니다. 팀원들은 각자의 역할에 집중하여 목표를 달성할 계획입니다."
+     ]
+    }
+   ],
+   "source": [
+    "# Defensive invocation: ensure Summary_llm and sample_transcript exist, call safely,\n",
+    "# and print parsed output whether it's a pydantic model, dict, or raw text.\n",
+    "import traceback, json\n",
+    "\n",
+    "def _print_parsed(res):\n",
+    "    try:\n",
+    "        # pydantic v2 model instance support\n",
+    "        if hasattr(res, 'model_dump_json'):\n",
+    "            print('Parsed (pydantic v2):')\n",
+    "            print(res.model_dump_json())\n",
+    "            return\n",
+    "        # pydantic v1 style\n",
+    "        if hasattr(res, 'json'):\n",
+    "            try:\n",
+    "                print('Parsed (pydantic):')\n",
+    "                print(res.json())\n",
+    "                return\n",
+    "            except Exception:\n",
+    "                pass\n",
+    "        # dict / list\n",
+    "        if isinstance(res, (dict, list)):\n",
+    "            print('Parsed (dict/list):')\n",
+    "            print(json.dumps(res, ensure_ascii=False, indent=2))\n",
+    "            return\n",
+    "        # object with content attribute (LLM response wrapper)\n",
+    "        if hasattr(res, 'content'):\n",
+    "            print('Raw content:')\n",
+    "            print(getattr(res, 'content'))\n",
+    "            return\n",
+    "        # fallback to string\n",
+    "        print('Fallback raw output:')\n",
+    "        print(str(res))\n",
+    "    except Exception as e:\n",
+    "        print('Failed to pretty-print result:', e)\n",
+    "        traceback.print_exc()\n",
+    "\n",
+    "# Preconditions\n",
+    "if 'Summary_llm' not in globals():\n",
+    "    print('Summary_llm is not defined. Make sure llm.with_structured_output was called and assigned to Summary_llm.')\n",
+    "else:\n",
+    "    if 'sample_transcript' not in globals():\n",
+    "        print('sample_transcript is not defined. Please define sample_transcript before invoking.')\n",
+    "    else:\n",
+    "        try:\n",
+    "            prompt = sample_transcript\n",
+    "            # prefer structured invocation with system prompt and token limit\n",
+    "            kwargs = { 'system_prompt': '간결한 한국어로, JSON만 반환하세요.', 'max_tokens': 512 }\n",
+    "            print('Invoking Summary_llm...')\n",
+    "            response = Summary_llm.invoke(prompt, **kwargs)\n",
+    "            print('Invocation completed. Result type:', type(response))\n",
+    "            _print_parsed(response)\n",
+    "        except Exception as e:\n",
+    "            print('Invocation failed:')\n",
+    "            traceback.print_exc()\n"
+   ]
+  }
+ ],
+ "metadata": {
+  "colab": {
+   "provenance": [
+    {
+     "file_id": "1iazMMZ2hz_xyWfJyA5jwAaPH5ybf1zvr",
+     "timestamp": 1748497701308
+    },
+    {
+     "file_id": "1o4X1L8emT9nKR-kzca9jqiOfqo81wyHh",
+     "timestamp": 1747076747743
+    }
+   ],
+   "toc_visible": true
+  },
+  "kernelspec": {
+   "display_name": "myenv",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.11.13"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 0
+}

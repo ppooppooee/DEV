@@ -16,7 +16,7 @@ bottom of this file and enable the test block.
 """
 
 import os
-os.environ["LM_STUDIO_API_URL"] = "http://10.81.94.125:1234"
+os.environ["LM_STUDIO_API_URL"] = "http://10.81.28.113:1234"
 os.environ["LM_STUDIO_MODEL_NAME"] = "exaone-3.5-2.4b-instruct"
 
 import requests
